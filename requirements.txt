@@ -5,3 +5,4 @@ tweepy
 pillow
 flask
 googletrans==4.0.0-rc1
+deep_translator
