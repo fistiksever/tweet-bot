@@ -42,16 +42,25 @@ def translate_to_turkish(text):
         return text
 
 def get_latest_news():
-    """CoinDesk RSS feed üzerinden haberleri çek"""
+    """Çeşitli RSS feed'lerinden haberleri çek ve Türkçeye çevir"""
     try:
-        feed = feedparser.parse('https://www.coindesk.com/arc/outboundfeeds/rss/')
+        # CoinDesk, Cointelegraph ve Bitcoin Magazine RSS feed'lerini ekle
+        feeds = [
+            'https://www.coindesk.com/arc/outboundfeeds/rss/',  # Coindesk
+            'https://cointelegraph.com/rss',                   # Cointelegraph
+            'https://bitcoinmagazine.com/.rss/full'            # Bitcoin Magazine
+        ]
+
         news_list = []
 
-        for entry in feed.entries[:5]:
-            news_list.append({
-                'title': entry.title,
-                'link': entry.link
-            })
+        for feed_url in feeds:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:5]:  # Her feed'den 5 haber alıyoruz
+                translated_title = translate_to_turkish(entry.title)  # Başlıkları Türkçeye çevir
+                news_list.append({
+                    'title': translated_title,  # Çevrilen başlık
+                    'link': entry.link
+                })
 
         return news_list if news_list else None
     except Exception as e:
@@ -60,7 +69,7 @@ def get_latest_news():
 
 def create_tweet(news_item):
     try:
-        translated_title = translate_to_turkish(news_item['title'])
+        translated_title = news_item['title']  # Başlık zaten Türkçeye çevrildi
         selected_hashtags = random.sample(["#Bitcoin", "#BTC", "#Kripto", "#KriptoPara"], k=3)
         hashtags_str = ' '.join(selected_hashtags)
 
