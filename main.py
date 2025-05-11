@@ -1,13 +1,13 @@
 from flask import Flask
 import os
-import requests
 import random
 import time
 from datetime import datetime
 from deep_translator import GoogleTranslator
 import feedparser
 import tweepy
-from dotenv import load_dotenv, main
+from dotenv import load_dotenv
+from threading import Thread
 
 # Flask web uygulamasını başlat
 app = Flask(__name__)
@@ -79,11 +79,6 @@ def post_tweet(news_item):
         print(f"Tweet atma hatası: {e}")
         return False
 
-@app.route('/')
-def index():
-    """Uptime Robot için boş bir HTTP yanıtı"""
-    return "Bitcoin Haber Botu Çalışıyor!"
-
 def run_bot():
     """Botu çalıştırma ve tweet atma"""
     while True:
@@ -99,10 +94,19 @@ def run_bot():
             else:
                 time.sleep(600)  # Hata varsa 10 dakika bekle
 
-if __name__ == "__main__":
-    # Replit'te sürekli çalışması için thread ile botu başlat
-    from threading import Thread
-    thread = Thread(target=run_bot)
-    thread.start()
-    app.run(host="0.0.0.0", port=80)  # Flask web sunucusunu başlat
+@app.route('/')
+def index():
+    """Uptime Robot için boş bir HTTP yanıtı"""
+    return "Bitcoin Haber Botu Çalışıyor!"
 
+@app.route('/start')
+def start_bot():
+    """Botu arka planda başlat"""
+    thread = Thread(target=run_bot)
+    thread.daemon = True  # Bu satır, Flask uygulaması kapandığında thread'in de kapanmasını sağlar
+    thread.start()
+    return "🟢 Tweet botu başlatıldı."
+
+# Flask uygulamasını başlat
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=80, debug=False)
