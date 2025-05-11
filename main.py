@@ -28,19 +28,18 @@ TWEETED_FILE = 'tweeted_titles.txt'
 
 def translate_to_turkish(text):
     try:
-        return GoogleTranslator(source='en', target='tr').translate(text)
+        return GoogleTranslator(source='en', target='tr').translate(text[:500])  # Uzun metinleri kısalt
     except Exception as e:
         print(f"Çeviri hatası: {e}")
         return text
 
 def get_latest_news():
-    """CoinDesk, Cointelegraph ve Bitcoin Magazine RSS feed'lerinden haberleri çek"""
+    """CoinDesk ve Cointelegraph RSS feed'lerinden haberleri çek"""
     news_list = []
 
     sources = {
         "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
-        "Cointelegraph": "https://cointelegraph.com/rss",
-        "Bitcoin Magazine": "https://bitcoinmagazine.com/feed"
+        "Cointelegraph": "https://cointelegraph.com/rss"
     }
 
     for name, url in sources.items():
@@ -50,11 +49,15 @@ def get_latest_news():
                 print(f"❌ {name} için bozuk RSS verisi: {feed.bozo_exception}")
                 continue
 
-            for entry in feed.entries[:3]:
+            for entry in feed.entries[:5]:  # Her kaynaktan 5 haber al
+                if not entry.title or not entry.link:
+                    continue
+
                 translated_title = translate_to_turkish(entry.title)
                 news_list.append({
                     'title': translated_title,
-                    'link': entry.link
+                    'link': entry.link,
+                    'source': name
                 })
         except Exception as e:
             print(f"{name} haber çekme hatası: {e}")
@@ -63,7 +66,7 @@ def get_latest_news():
 
 def create_tweet(news_item):
     try:
-        selected_hashtags = random.sample(["#Bitcoin", "#BTC", "#Kripto", "#KriptoPara"], k=3)
+        selected_hashtags = random.sample(["#Bitcoin", "#BTC", "#Kripto", "#KriptoPara"], k=2)
         hashtags_str = ' '.join(selected_hashtags)
         tweet_text = f"{news_item['title']}\n\n🔗 {news_item['link']}\n\n{hashtags_str}"
         return tweet_text[:275] + "..." if len(tweet_text) > 280 else tweet_text
@@ -73,14 +76,20 @@ def create_tweet(news_item):
 
 def post_tweet(news_item):
     try:
-        tweet_text = create_tweet(news_item)
-        if not tweet_text or is_already_tweeted(news_item['title'], news_item['link']):
+        if is_already_tweeted(news_item['title'], news_item['link']):
+            print(f"⏩ Daha önce tweet atılmış: {news_item['title']}")
             return False
 
-        client.create_tweet(text=tweet_text)
-        print(f"✅ Tweet atıldı: {datetime.now().strftime('%H:%M:%S')}")
-        save_tweeted_title(news_item['title'], news_item['link'])
-        return True
+        tweet_text = create_tweet(news_item)
+        if not tweet_text:
+            return False
+
+        response = client.create_tweet(text=tweet_text)
+        if response.data['id']:
+            print(f"✅ [{news_item['source']}] Tweet atıldı: {datetime.now().strftime('%H:%M:%S')}")
+            save_tweeted_title(news_item['title'], news_item['link'])
+            return True
+        return False
     except tweepy.TweepyException as e:
         print(f"Tweet atma hatası: {e}")
         return False
@@ -88,16 +97,23 @@ def post_tweet(news_item):
 def is_already_tweeted(title, link):
     if not os.path.exists(TWEETED_FILE):
         return False
-    with open(TWEETED_FILE, 'r', encoding='utf-8') as file:
-        for line in file:
-            saved_title, saved_link = line.strip().split("||")
-            if saved_title == title and saved_link == link:
-                return True
+    try:
+        with open(TWEETED_FILE, 'r', encoding='utf-8') as file:
+            for line in file:
+                if '||' in line:
+                    saved_title, saved_link = line.strip().split("||")
+                    if saved_title == title or saved_link == link:
+                        return True
+    except Exception as e:
+        print(f"Tweet kontrol hatası: {e}")
     return False
 
 def save_tweeted_title(title, link):
-    with open(TWEETED_FILE, 'a', encoding='utf-8') as file:
-        file.write(f"{title}||{link}\n")
+    try:
+        with open(TWEETED_FILE, 'a', encoding='utf-8') as file:
+            file.write(f"{title}||{link}\n")
+    except Exception as e:
+        print(f"Tweet kaydetme hatası: {e}")
 
 @app.route('/')
 def index():
@@ -110,33 +126,42 @@ def start_bot():
     return "🟢 Tweet botu başlatıldı."
 
 def run_bot():
-                                    while True:
-                                        print("🟢 run_bot() başladı.")
-                                        news_items = get_latest_news()
+    while True:
+        try:
+            print(f"\n🔍 Haberler kontrol ediliyor: {datetime.now().strftime('%H:%M:%S')}")
+            news_items = get_latest_news()
 
-                                        if not news_items:
-                                            print(f"⚠️ Haber bulunamadı. {datetime.now().strftime('%H:%M')}")
-                                            time.sleep(3600)
-                                            continue
+            if not news_items:
+                print(f"⚠️ Haber bulunamadı. {datetime.now().strftime('%H:%M')}")
+                time.sleep(3600)
+                continue
 
-                                        for item in news_items:
-                                            print(f"📰 Haber: {item['title']}")
-                                            if post_tweet(item):
-                                                print("✅ Tweet gönderildi.")
-                                                time.sleep(900)
-                                            else:
-                                                print("⏩ Tweet atlanıyor.")
-                                                time.sleep(600)
+            # Haberleri karıştır
+            random.shuffle(news_items)
 
+            for item in news_items:
+                print(f"\n📰 [{item['source']}] Haber: {item['title']}")
+                if post_tweet(item):
+                    # Başarılı tweet sonrası 15-25 dakika bekle
+                    wait_time = random.randint(900, 1500)
+                    print(f"⏳ Sonraki tweet için {wait_time//60} dakika bekleniyor...")
+                    time.sleep(wait_time)
+                else:
+                    # Başarısız tweet sonrası 5-10 dakika bekle
+                    wait_time = random.randint(300, 600)
+                    print(f"⏳ Sonraki deneme için {wait_time//60} dakika bekleniyor...")
+                    time.sleep(wait_time)
 
-# 🔍 DEBUG endpoint'i — HTML olarak log gösterir
+        except Exception as e:
+            print(f"🔴 Ana döngü hatası: {e}")
+            time.sleep(3600)
+
 @app.route('/debug')
 def debug_feeds():
     output = []
     sources = {
         "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
-        "Cointelegraph": "https://cointelegraph.com/rss",
-        "Bitcoin Magazine": "https://bitcoinmagazine.com/feed"
+        "Cointelegraph": "https://cointelegraph.com/rss"
     }
 
     for name, url in sources.items():
@@ -155,6 +180,7 @@ def debug_feeds():
                 entry = feed.entries[0]
                 output.append(f"<p>✅ İlk Başlık: {entry.title}</p>")
                 output.append(f"<p>🔗 Link: <a href='{entry.link}' target='_blank'>{entry.link}</a></p>")
+                output.append(f"<p>🔄 Çeviri: {translate_to_turkish(entry.title)}</p>")
             else:
                 output.append(f"<p>⚠️ Entry listesi boş.</p>")
         except Exception as e:
@@ -162,7 +188,6 @@ def debug_feeds():
 
     return Response("<br>".join(output), mimetype='text/html')
 
-# ✅ Uygulamayı çalıştır
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render için uyumlu
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
