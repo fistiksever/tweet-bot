@@ -1,5 +1,6 @@
 from flask import Flask
 import os
+import requests
 import random
 import time
 from datetime import datetime
@@ -27,6 +28,9 @@ client = tweepy.Client(
     access_token=ACCESS_TOKEN,
     access_token_secret=ACCESS_TOKEN_SECRET
 )
+
+# Tweet başlıklarını kaydetmek için dosya adı
+TWEETED_FILE = 'tweeted_titles.txt'
 
 # Çeviri fonksiyonu
 def translate_to_turkish(text):
@@ -72,12 +76,38 @@ def post_tweet(news_item):
         if not tweet_text:
             return False
 
+        # Daha önce atılan tweet başlıklarını kontrol et
+        if is_already_tweeted(news_item['title']):
+            print(f"⚠️ Bu haber zaten tweetlendi: {news_item['title']}")
+            return False
+
         client.create_tweet(text=tweet_text)
         print(f"✅ Tweet atıldı: {datetime.now().strftime('%H:%M:%S')}")
+
+        # Başlık dosyasına yeni tweet başlığını ekle
+        save_tweeted_title(news_item['title'])
         return True
     except tweepy.TweepyException as e:
         print(f"Tweet atma hatası: {e}")
         return False
+
+def is_already_tweeted(title):
+    """Başlığın daha önce tweetlenip tweetlenmediğini kontrol et"""
+    if not os.path.exists(TWEETED_FILE):
+        return False
+    with open(TWEETED_FILE, 'r', encoding='utf-8') as file:
+        tweeted_titles = file.readlines()
+        return title + '\n' in tweeted_titles
+
+def save_tweeted_title(title):
+    """Başlıkları dosyaya kaydet"""
+    with open(TWEETED_FILE, 'a', encoding='utf-8') as file:
+        file.write(title + '\n')
+
+@app.route('/')
+def index():
+    """Uptime Robot için boş bir HTTP yanıtı"""
+    return "Bitcoin Haber Botu Çalışıyor!"
 
 def run_bot():
     """Botu çalıştırma ve tweet atma"""
@@ -94,19 +124,12 @@ def run_bot():
             else:
                 time.sleep(600)  # Hata varsa 10 dakika bekle
 
-@app.route('/')
-def index():
-    """Uptime Robot için boş bir HTTP yanıtı"""
-    return "Bitcoin Haber Botu Çalışıyor!"
-
 @app.route('/start')
 def start_bot():
-    """Botu arka planda başlat"""
-    thread = Thread(target=run_bot)
-    thread.daemon = True  # Bu satır, Flask uygulaması kapandığında thread'in de kapanmasını sağlar
+    thread = Thread(target=run_bot, daemon=True)
     thread.start()
     return "🟢 Tweet botu başlatıldı."
 
 # Flask uygulamasını başlat
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80, debug=False)
+    app.run(host="0.0.0.0", port=80)
